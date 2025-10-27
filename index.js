@@ -10,7 +10,7 @@ const app = express();
 // ✅ Allow only your Netlify frontend domain
 app.use(
   cors({
-    origin: ["https://studentfeedbackport.netlify.app"], // your Netlify domain
+    origin: ["https://studentsfeedbackportal.netlify.app"], // your Netlify domain
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   })
