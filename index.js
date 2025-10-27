@@ -10,11 +10,14 @@ const app = express();
 // ✅ Allow only your Netlify frontend domain
 app.use(
   cors({
-    origin: ["https://studentsfeedbackportal.netlify.app"], // your Netlify domain
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    origin: ["https://studentsfeedbackportal.netlify.app"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
+    optionsSuccessStatus: 200, // ✅ fixes CORS preflight for some browsers
   })
 );
+
 
 app.use(bodyParser.json());
 

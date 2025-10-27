@@ -304,8 +304,10 @@ router.post("/reset-password", async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    user.password = password;
-    await user.save();
+    const salt = await bcrypt.genSalt(10);
+user.password = await bcrypt.hash(password, salt);
+await user.save();
+
 
     res.json({ message: "Password reset successfully" });
   } catch {
