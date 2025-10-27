@@ -18,7 +18,7 @@ mongoose.connect(process.env.MONGO_URI, {
   useUnifiedTopology: true
 })
 
-  .then(() => console.log("MongoDB connected"))
+  .then(() => console.log("MongoDB connected",mongoose.connection.name))
   .catch(err => console.log(err));
 
 // Use routes
