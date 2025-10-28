@@ -18,7 +18,7 @@ app.use(
   })
 );
 
-
+app.options("*", cors());
 app.use(bodyParser.json());
 
 mongoose
