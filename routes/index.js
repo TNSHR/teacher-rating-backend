@@ -34,10 +34,11 @@ router.post("/restore", upload.single("backupFile"), async (req, res) => {
     ]);
 
     await Promise.all([
-      Student.insertMany(backupData.students || []),
-      Teacher.insertMany(backupData.teachers || []),
-      Rating.insertMany(backupData.ratings || []),
-    ]);
+  Student.insertMany(backupData.students || [], { ordered: false }),
+  Teacher.insertMany(backupData.teachers || [], { ordered: false }),
+  Rating.insertMany(backupData.ratings || [], { ordered: false }),
+]);
+
 
     res.status(200).json({ message: "Data restored successfully" });
   } catch (err) {
@@ -66,6 +67,7 @@ router.get("/students", async (req, res) => {
   }
 });
 
+
 router.post("/students", async (req, res) => {
   try {
     const { name, grade, uniqueCode } = req.body;
@@ -91,23 +93,48 @@ router.put("/students/:id", async (req, res) => {
     res.status(500).json({ message: "Error updating student" });
   }
 });
+// ✅ Get teachers by student unique code
+router.get("/teachers/by-student-code/:uniqueCode", async (req, res) => {
+  try {
+    const { uniqueCode } = req.params;
+
+    // Find the student by their unique code
+    const student = await Student.findOne({ uniqueCode: uniqueCode.toUpperCase() });
+    if (!student) {
+      return res.status(404).json({ message: "Invalid student code" });
+    }
+
+    // Find teachers who teach the same grade
+    const teachers = await Teacher.find({ grade: student.grade });
+
+    res.json({ grade: student.grade, teachers });
+  } catch (err) {
+    console.error("Error fetching teachers by student code:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 
 /* ===============================
    🔹 TEACHER ROUTES
 ================================= */
 router.get("/teachers", async (req, res) => {
   try {
-    const teachers = await Teacher.find();
+    const { grade } = req.query; // ✅ capture grade from query params
+    const filter = grade ? { grade: Number(grade) } : {}; // ✅ convert to Number for exact match
+    const teachers = await Teacher.find(filter); // ✅ apply grade filter
     res.json(teachers);
   } catch {
     res.status(500).json({ message: "Error fetching teachers" });
   }
 });
 
+
+
 router.post("/teachers", async (req, res) => {
   try {
-    const { name, subject } = req.body;
-    const newTeacher = new Teacher({ name, subject });
+     const { name, subject, grade } = req.body;
+    const newTeacher = new Teacher({ name, subject, grade });
     await newTeacher.save();
     res.status(201).json(newTeacher);
   } catch {
@@ -117,10 +144,10 @@ router.post("/teachers", async (req, res) => {
 
 router.put("/teachers/:id", async (req, res) => {
   try {
-    const { name, subject } = req.body;
+      const { name, subject, grade } = req.body;
     const updatedTeacher = await Teacher.findByIdAndUpdate(
       req.params.id,
-      { name, subject },
+      { name, subject,grade },
       { new: true }
     );
     res.json(updatedTeacher);
@@ -447,6 +474,27 @@ router.get("/backup", async (req, res) => {
     res.status(500).json({ message: "Failed to create backup" });
   }
 });
+
+// ✅ Delete a teacher by ID
+router.delete("/teachers/:id", async (req, res) => {
+  try {
+    await Teacher.findByIdAndDelete(req.params.id);
+    res.json({ message: "Teacher deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ message: "Error deleting teacher" });
+  }
+});
+
+// ✅ Delete a student by ID
+router.delete("/students/:id", async (req, res) => {
+  try {
+    await Student.findByIdAndDelete(req.params.id);
+    res.json({ message: "Student deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ message: "Error deleting student" });
+  }
+});
+
 
 
 /* ===============================
