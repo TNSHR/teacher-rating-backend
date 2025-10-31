@@ -478,22 +478,52 @@ router.get("/backup", async (req, res) => {
 // ✅ Delete a teacher by ID
 router.delete("/teachers/:id", async (req, res) => {
   try {
-    await Teacher.findByIdAndDelete(req.params.id);
-    res.json({ message: "Teacher deleted successfully" });
+    const deleted = await Teacher.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ message: "Teacher not found" });
+
+    // ✅ Ensure deletion completed before sending updated list
+    const remaining = await Teacher.find();
+    res.json({ message: "Teacher deleted successfully", teachers: remaining });
   } catch (err) {
     res.status(500).json({ message: "Error deleting teacher" });
   }
 });
 
+
 // ✅ Delete a student by ID
 router.delete("/students/:id", async (req, res) => {
   try {
-    await Student.findByIdAndDelete(req.params.id);
-    res.json({ message: "Student deleted successfully" });
+    const deleted = await Student.findByIdAndDelete(req.params.id);
+    if (!deleted) return res.status(404).json({ message: "Student not found" });
+
+    // ✅ Return updated student list after deletion
+    const remaining = await Student.find();
+    res.json({ message: "Student deleted successfully", students: remaining });
   } catch (err) {
     res.status(500).json({ message: "Error deleting student" });
   }
 });
+// Delete teacher or student
+router.delete("/:type/:id", auth, async (req, res) => {
+  try {
+    const { type, id } = req.params;
+
+    if (type === "teachers") {
+      await Teacher.findByIdAndDelete(id);
+    } else if (type === "students") {
+      await Student.findByIdAndDelete(id);
+    } else {
+      return res.status(400).json({ message: "Invalid type" });
+    }
+
+    res.json({ message: `${type.slice(0, -1)} deleted successfully` });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
 
 
 
