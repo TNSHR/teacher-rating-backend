@@ -191,7 +191,6 @@ router.post("/ratings", async (req, res) => {
   }
 });
 
-// ✅ FIXED: populate student name in teachers-ratings
 router.get("/teachers-ratings", async (req, res) => {
   try {
     const teachers = await Teacher.find();
@@ -200,37 +199,67 @@ router.get("/teachers-ratings", async (req, res) => {
 
     const result = await Promise.all(
       teachers.map(async (t) => {
-        // ✅ populate studentId to include names
         const allRatings = await Rating.find({ teacherId: t._id }).populate("studentId");
         const todayRatings = await Rating.find({
           teacherId: t._id,
           date: { $gte: today },
         }).populate("studentId");
 
+        // ✅ Only consider students who actually gave a rating
+        const validRatings = allRatings.filter((r) => r.rating && Number(r.rating) > 0);
+        const validTodayRatings = todayRatings.filter((r) => r.rating && Number(r.rating) > 0);
+
+        // ✅ Calculate averages only from students who rated
         const average =
-          allRatings.length > 0
-            ? allRatings.reduce((a, b) => a + b.rating, 0) / allRatings.length
+          validRatings.length > 0
+            ? validRatings.reduce((sum, r) => sum + Number(r.rating), 0) /
+              validRatings.length
             : 0;
 
         const todayAverage =
-          todayRatings.length > 0
-            ? todayRatings.reduce((a, b) => a + b.rating, 0) / todayRatings.length
+          validTodayRatings.length > 0
+            ? validTodayRatings.reduce((sum, r) => sum + Number(r.rating), 0) /
+              validTodayRatings.length
             : 0;
 
-        // ✅ Include actual student names instead of unknown
-        const ratingsWithNames = allRatings.map((r) => ({
+        // ✅ Subject + grade grouping (only for rated students)
+        const subjectRatings = {};
+        validRatings.forEach((r) => {
+          const subj = r.subject || t.subject || "Unknown Subject";
+          const grade = r.studentId?.grade;
+          if (!grade) return; // skip if no grade
+          const key = `${subj}-Grade${grade}`;
+          if (!subjectRatings[key]) subjectRatings[key] = [];
+          subjectRatings[key].push(Number(r.rating));
+        });
+
+        const subjectWise = Object.entries(subjectRatings).map(([key, ratings]) => {
+          const [subject, gradePart] = key.split("-Grade");
+          return {
+            subject: subject.trim(),
+            grade: gradePart,
+            average: ratings.reduce((a, b) => a + b, 0) / ratings.length,
+          };
+        });
+
+        // ✅ Include only students who rated
+        const ratingsWithDetails = validRatings.map((r) => ({
           studentName: r.studentId?.name || "Unknown Student",
           grade: r.studentId?.grade || "N/A",
-          rating: r.rating,
+          rating: Number(r.rating),
+          date: r.date ? new Date(r.date).toLocaleDateString("en-IN") : "N/A",
         }));
 
         return {
           _id: t._id,
           name: t.name,
           subject: t.subject,
-          average,
+          grades: t.grades,
+          teacherGrade: t.grade || t.grades || "N/A",
+          average, // 🩵 based only on students who rated
           todayAverage,
-          ratings: ratingsWithNames,
+          subjectWise,
+          ratings: ratingsWithDetails,
         };
       })
     );
@@ -241,6 +270,11 @@ router.get("/teachers-ratings", async (req, res) => {
     res.status(500).json({ message: "Error fetching teacher ratings" });
   }
 });
+
+
+
+
+
 
 /* ===============================
    🔹 AUTH & OTP ROUTES
