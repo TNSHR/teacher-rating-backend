@@ -105,7 +105,10 @@ router.get("/teachers/by-student-code/:uniqueCode", async (req, res) => {
     }
 
     // Find teachers who teach the same grade
-    const teachers = await Teacher.find({ grade: student.grade });
+    const teachers = await Teacher.find({
+  "subjects.grade": student.grade
+});
+
 
     res.json({ grade: student.grade, teachers });
   } catch (err) {
@@ -118,43 +121,76 @@ router.get("/teachers/by-student-code/:uniqueCode", async (req, res) => {
 /* ===============================
    🔹 TEACHER ROUTES
 ================================= */
+
 router.get("/teachers", async (req, res) => {
   try {
-    const { grade } = req.query; // ✅ capture grade from query params
-    const filter = grade ? { grade: Number(grade) } : {}; // ✅ convert to Number for exact match
-    const teachers = await Teacher.find(filter); // ✅ apply grade filter
+    const { grade } = req.query;
+
+    let filter = {};
+
+    // Filter inside nested subjects array
+    if (grade) {
+      filter = { "subjects.grade": Number(grade) };
+    }
+
+    const teachers = await Teacher.find(filter);
     res.json(teachers);
-  } catch {
+  } catch (err) {
     res.status(500).json({ message: "Error fetching teachers" });
   }
 });
 
 
-
+// ✅ FIXED — accepts subjects array properly
 router.post("/teachers", async (req, res) => {
   try {
-     const { name, subject, grade } = req.body;
-    const newTeacher = new Teacher({ name, subject, grade });
+    const { name, subjects } = req.body;
+
+    const newTeacher = new Teacher({ name, subjects });
+
     await newTeacher.save();
     res.status(201).json(newTeacher);
-  } catch {
+  } catch (err) {
     res.status(500).json({ message: "Error adding teacher" });
   }
 });
 
+
+
 router.put("/teachers/:id", async (req, res) => {
   try {
-      const { name, subject, grade } = req.body;
+    const { name, subjects } = req.body;
+
+    const cleanedSubjects = (subjects || []).filter(
+      (s) =>
+        s &&
+        s.subject &&
+        s.subject.trim() !== "" &&
+        s.grade !== "" &&
+        s.grade !== null &&
+        s.grade !== undefined
+    );
+
     const updatedTeacher = await Teacher.findByIdAndUpdate(
       req.params.id,
-      { name, subject,grade },
+      { name, subjects: cleanedSubjects },
       { new: true }
     );
+
+    if (!updatedTeacher) {
+      return res.status(404).json({ message: "Teacher not found" });
+    }
+
     res.json(updatedTeacher);
-  } catch {
+  } catch (err) {
+    console.error("Update teacher error:", err);
     res.status(500).json({ message: "Error updating teacher" });
   }
 });
+
+
+
+
 
 /* ===============================
    🔹 RATING ROUTES
@@ -171,7 +207,13 @@ router.get("/ratings", async (req, res) => {
 
 router.post("/ratings", async (req, res) => {
   try {
-    const { studentId, teacherId, rating, uniqueCode } = req.body;
+    let { studentId, teacherId, rating, uniqueCode } = req.body;
+
+    // ✅ Extract actual ObjectId if teacherId includes subject
+    if (teacherId.includes("-")) {
+      teacherId = teacherId.split("-")[0];
+    }
+
     const student = await Student.findById(studentId);
     if (!student) return res.status(404).json({ message: "Student not found" });
 
@@ -190,6 +232,7 @@ router.post("/ratings", async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
 
 router.get("/teachers-ratings", async (req, res) => {
   try {
@@ -330,6 +373,7 @@ router.post("/verify-otp", async (req, res) => {
   }
 });
 
+// REGISTER route - DON'T hash manually
 router.post("/register", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password)
@@ -339,55 +383,72 @@ router.post("/register", async (req, res) => {
     const existingUser = await User.findOne({ email });
     if (existingUser) return res.status(200).json({ message: "User already registered" });
 
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
+    // ✅ NO MANUAL HASHING - let the schema hook do it
     const newUser = new User({
-      username: email,
+      username: email.split('@')[0], // Better username
       email: email.toLowerCase(),
-      password: hashedPassword,
+      password: password, // Store plain password - hook will hash it
       isAdmin: true,
     });
 
-    await newUser.save();
+    await newUser.save(); // pre('save') hook hashes it automatically
     res.json({ message: "Registered successfully!" });
-  } catch {
+  } catch (error) {
+    console.error("Register error:", error);
     res.status(500).json({ message: "Error registering user" });
   }
 });
 
+// RESET-PASSWORD route - DON'T hash manually
 router.post("/reset-password", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password)
     return res.status(400).json({ message: "Email and new password required" });
 
   try {
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    const salt = await bcrypt.genSalt(10);
-user.password = await bcrypt.hash(password, salt);
-await user.save();
-
+    // ✅ Just set the plain password - hook will hash it
+    user.password = password;
+    await user.save(); // pre('save') hook hashes it automatically
 
     res.json({ message: "Password reset successfully" });
-  } catch {
+  } catch (error) {
+    console.error("Reset password error:", error);
     res.status(500).json({ message: "Error resetting password" });
   }
 });
 
 router.post("/login", async (req, res) => {
+  console.log("LOGIN REQUEST BODY:", req.body);
   const { email, password } = req.body;
-  if (!email || !password)
+  
+  if (!email || !password) {
+    console.log("Missing email or password");
     return res.status(400).json({ message: "Email and password required" });
+  }
 
   try {
     const normalizedEmail = email.trim().toLowerCase();
+    console.log("Looking for user with email:", normalizedEmail);
+    
     const user = await User.findOne({ email: normalizedEmail });
-    if (!user) return res.status(400).json({ message: "Invalid credentials" });
+    console.log("User found:", user ? "Yes" : "No");
+    
+    if (!user) {
+      console.log("User not found for email:", normalizedEmail);
+      return res.status(400).json({ message: "Invalid credentials" });
+    }
 
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
+    console.log("Comparing password...");
+    const isMatch = await bcrypt.compare(password, user.password);
+    console.log("Password match:", isMatch);
+
+    if (!isMatch) {
+      console.log("Password doesn't match");
+      return res.status(400).json({ message: "Invalid credentials" });
+    }
 
     const token = jwt.sign(
       { id: user._id, email: user.email, isAdmin: user.isAdmin },
@@ -395,9 +456,19 @@ router.post("/login", async (req, res) => {
       { expiresIn: "1d" }
     );
 
-    res.status(200).json({ token, isAdmin: user.isAdmin });
-  } catch {
-    res.status(500).json({ message: "Server error" });
+    console.log("Login successful, token generated");
+    res.status(200).json({ 
+      token, 
+      isAdmin: user.isAdmin,
+      email: user.email 
+    });
+    
+  } catch (error) {
+    console.error("Login error details:", error);
+    res.status(500).json({ 
+      message: "Server error",
+      error: error.message // Add error details
+    });
   }
 });
 
@@ -572,13 +643,17 @@ router.post("/create-teacher-user", async (req, res) => {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    // Create linked user
+    // Hash password properly
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
     const newUser = new User({
       username,
-      email,
-      password,
+      email: email.toLowerCase(),
+      password: hashedPassword,
       role: "teacher",
     });
+
     await newUser.save();
 
     res.json({ message: "Teacher user created successfully!", user: newUser });
@@ -587,6 +662,7 @@ router.post("/create-teacher-user", async (req, res) => {
     res.status(500).json({ message: "Error creating teacher user" });
   }
 });
+
 
 // ✅ Fetch All Teacher Users
 router.get("/teacher-users", async (req, res) => {
@@ -643,4 +719,3 @@ router.get("/all-users", auth, async (req, res) => {
 });
 
 module.exports = router;
-
